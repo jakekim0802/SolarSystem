@@ -86,6 +86,7 @@ const payloadRoutePositions = new Float32Array(PAYLOAD_ROUTE_POINTS * 3);
 const payloadOrbitPositions = new Float32Array(PAYLOAD_ORBIT_POINTS * 3);
 const galaxyObjects = new THREE.Group();
 scene.add(galaxyObjects);
+let galacticBlackHole = null;
 
 let simulationDays = 0;
 let speedMultiplier = Number(speedInput.value);
@@ -363,6 +364,7 @@ function renderFrame() {
     advanceSimulationClock(delta);
   }
 
+  updateGalaxyCore(delta);
   updateSolarSystem();
   updateSwingbyPayload(delta);
   updateCameraTarget();
@@ -401,6 +403,8 @@ window.__solarSim = {
       paused,
       viewMode,
       viewportMode,
+      galaxyCoreStyle: galacticBlackHole?.userData.coreStyle ?? "unknown",
+      galaxyCoreRotation: galacticBlackHole?.userData.diskGroup?.rotation.y ?? 0,
       solarPosition: solarSystem.position.toArray(),
       bodyPositions: Object.fromEntries(
         bodyHandles.map(({ body, holder }) => [body.key, holder.position.toArray()]),
@@ -451,24 +455,9 @@ window.__solarSim = {
 };
 
 function buildGalaxy() {
-  const coreGeometry = new THREE.SphereGeometry(4.8, 48, 24);
-  const coreMaterial = new THREE.MeshBasicMaterial({
-    color: "#ffd07a",
-    transparent: true,
-    opacity: 0.92,
-  });
-  const core = new THREE.Mesh(coreGeometry, coreMaterial);
-  galaxyObjects.add(core);
-
-  const haloGeometry = new THREE.SphereGeometry(12, 48, 24);
-  const haloMaterial = new THREE.MeshBasicMaterial({
-    color: "#d2775c",
-    transparent: true,
-    opacity: 0.11,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  galaxyObjects.add(new THREE.Mesh(haloGeometry, haloMaterial));
+  galacticBlackHole = createCinematicBlackHole();
+  galaxyObjects.add(galacticBlackHole);
+  document.documentElement.dataset.galaxyCoreStyle = galacticBlackHole.userData.coreStyle;
 
   const orbitPoints = [];
   for (let i = 0; i <= 360; i += 1) {
@@ -528,6 +517,221 @@ function buildGalaxy() {
 
   const farStars = createFarStarfield();
   scene.add(farStars);
+}
+
+function createCinematicBlackHole() {
+  const group = new THREE.Group();
+  group.name = "galaxy-center-black-hole";
+  group.rotation.x = THREE.MathUtils.degToRad(-12);
+  group.rotation.z = THREE.MathUtils.degToRad(8);
+  group.userData.coreStyle = "gargantua-inspired";
+
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(14.8, 64, 32),
+    new THREE.MeshBasicMaterial({
+      color: "#c87845",
+      transparent: true,
+      opacity: 0.075,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  halo.renderOrder = 0;
+  group.add(halo);
+
+  const diskGroup = new THREE.Group();
+  diskGroup.name = "black-hole-accretion-disk";
+  group.add(diskGroup);
+
+  const diskTexture = createAccretionDiskTexture();
+  const outerDisk = createAccretionDiskMesh(5.15, 13.6, diskTexture, 0.86, 0.48);
+  const innerDisk = createAccretionDiskMesh(4.65, 8.1, diskTexture, 0.72, 0.58);
+  innerDisk.rotation.z = THREE.MathUtils.degToRad(14);
+  diskGroup.add(outerDisk, innerDisk);
+
+  const frontArc = createDiskArc(9.4, 3.95, 0.12, -0.18, 1.06, "#fff0bc", 0.105, 0.92);
+  const emberArc = createDiskArc(11.7, 4.95, -0.04, 0.58, 1.45, "#f08a45", 0.075, 0.72);
+  diskGroup.add(frontArc, emberArc);
+
+  const upperLens = createLensArc(7.15, 3.25, -0.12, 0.08, 0.92, "#ffe1a1", 0.082, 0.82);
+  const lowerLens = createLensArc(6.35, 2.45, 0.12, 1.1, 1.9, "#e47642", 0.06, 0.46);
+  group.add(upperLens, lowerLens);
+
+  const photonRing = new THREE.Mesh(
+    new THREE.TorusGeometry(4.78, 0.075, 12, 192),
+    new THREE.MeshBasicMaterial({
+      color: "#fff4cf",
+      transparent: true,
+      opacity: 0.74,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  photonRing.rotation.x = Math.PI / 2;
+  photonRing.scale.y = 0.82;
+  photonRing.renderOrder = 3;
+  group.add(photonRing);
+
+  const horizon = new THREE.Mesh(
+    new THREE.SphereGeometry(4.55, 72, 36),
+    new THREE.MeshBasicMaterial({
+      color: "#010103",
+    }),
+  );
+  horizon.renderOrder = 4;
+  group.add(horizon);
+
+  const rimGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(4.9, 72, 36),
+    new THREE.MeshBasicMaterial({
+      color: "#2e2537",
+      transparent: true,
+      opacity: 0.18,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  rimGlow.renderOrder = 5;
+  group.add(rimGlow);
+
+  group.userData.diskGroup = diskGroup;
+  group.userData.lensArcs = [upperLens, lowerLens];
+  return group;
+}
+
+function createAccretionDiskMesh(innerRadius, outerRadius, texture, opacity, squash) {
+  const geometry = new THREE.RingGeometry(innerRadius, outerRadius, 224, 8);
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    color: "#ffd29a",
+    transparent: true,
+    opacity,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const disk = new THREE.Mesh(geometry, material);
+  disk.rotation.x = Math.PI / 2;
+  disk.scale.y = squash;
+  disk.renderOrder = 1;
+  return disk;
+}
+
+function createAccretionDiskTexture() {
+  const size = 512;
+  const canvasTexture = document.createElement("canvas");
+  canvasTexture.width = size;
+  canvasTexture.height = size;
+  const ctx = canvasTexture.getContext("2d");
+  const center = size / 2;
+  const random = mulberry32(424242);
+
+  ctx.clearRect(0, 0, size, size);
+  ctx.globalCompositeOperation = "lighter";
+
+  for (let i = 0; i < 52; i += 1) {
+    const radius = 132 + i * 6.6 + random() * 3.8;
+    const alpha = 0.035 + random() * 0.065;
+    const hue = random() > 0.58 ? "255, 229, 171" : random() > 0.32 ? "239, 132, 66" : "255, 184, 102";
+    ctx.strokeStyle = `rgba(${hue}, ${alpha})`;
+    ctx.lineWidth = 2 + random() * 8;
+    ctx.beginPath();
+    ctx.arc(center, center, radius, 0, TAU);
+    ctx.stroke();
+  }
+
+  for (let i = 0; i < 28; i += 1) {
+    const radius = 150 + random() * 180;
+    const start = -0.35 + random() * 0.55;
+    const end = start + 0.55 + random() * 1.1;
+    ctx.strokeStyle = `rgba(255, ${206 + random() * 34}, ${128 + random() * 52}, ${0.16 + random() * 0.24})`;
+    ctx.lineWidth = 5 + random() * 13;
+    ctx.beginPath();
+    ctx.arc(center, center, radius, start, end);
+    ctx.stroke();
+  }
+
+  const alphaMask = ctx.createRadialGradient(center, center, 92, center, center, 248);
+  alphaMask.addColorStop(0, "rgba(255,255,255,0)");
+  alphaMask.addColorStop(0.34, "rgba(255,255,255,0.95)");
+  alphaMask.addColorStop(0.72, "rgba(255,255,255,0.72)");
+  alphaMask.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.fillStyle = alphaMask;
+  ctx.fillRect(0, 0, size, size);
+  ctx.globalCompositeOperation = "source-over";
+
+  const texture = new THREE.CanvasTexture(canvasTexture);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return texture;
+}
+
+function createDiskArc(radiusX, radiusZ, yOffset, startTurn, endTurn, color, tubeRadius, opacity) {
+  const points = [];
+  const segments = 96;
+  for (let i = 0; i <= segments; i += 1) {
+    const t = i / segments;
+    const angle = THREE.MathUtils.lerp(startTurn, endTurn, t) * TAU;
+    points.push(
+      new THREE.Vector3(
+        Math.cos(angle) * radiusX,
+        yOffset,
+        Math.sin(angle) * radiusZ,
+      ),
+    );
+  }
+  return createGlowTube(points, color, tubeRadius, opacity, 2);
+}
+
+function createLensArc(radiusX, radiusY, zOffset, startTurn, endTurn, color, tubeRadius, opacity) {
+  const points = [];
+  const segments = 112;
+  for (let i = 0; i <= segments; i += 1) {
+    const t = i / segments;
+    const angle = THREE.MathUtils.lerp(startTurn, endTurn, t) * TAU;
+    points.push(
+      new THREE.Vector3(
+        Math.cos(angle) * radiusX,
+        Math.sin(angle) * radiusY,
+        zOffset,
+      ),
+    );
+  }
+  return createGlowTube(points, color, tubeRadius, opacity, 2);
+}
+
+function createGlowTube(points, color, tubeRadius, opacity, renderOrder) {
+  const curve = new THREE.CatmullRomCurve3(points);
+  const geometry = new THREE.TubeGeometry(curve, Math.max(points.length - 1, 12), tubeRadius, 10, false);
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const tube = new THREE.Mesh(geometry, material);
+  tube.renderOrder = renderOrder;
+  return tube;
+}
+
+function updateGalaxyCore(delta) {
+  if (!galacticBlackHole) {
+    return;
+  }
+
+  const diskGroup = galacticBlackHole.userData.diskGroup;
+  if (diskGroup) {
+    diskGroup.rotation.y += delta * 0.08;
+  }
+
+  const pulse = 0.66 + Math.sin(clock.elapsedTime * 0.9) * 0.08;
+  galacticBlackHole.userData.lensArcs?.forEach((arc, index) => {
+    arc.material.opacity = index === 0 ? pulse : pulse * 0.62;
+  });
 }
 
 function buildSolarSystem() {

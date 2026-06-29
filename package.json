@@ -1,0 +1,17 @@
+{
+  "name": "galactic-solar-system-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:host": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "preview:host": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "three": "^0.167.1",
+    "vite": "^8.1.0"
+  }
+}

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="은하 중심을 기준으로 태양계의 이동과 행성 궤도를 보여주는 Three.js 시뮬레이터"
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='16' fill='%23f5a83b'/%3E%3Cellipse cx='32' cy='32' rx='29' ry='10' fill='none' stroke='%2373e0d1' stroke-width='4'/%3E%3C/svg%3E" />
+    <title>Galactic Solar System Simulator</title>
+    <script>
+      if (window.location.protocol === "file:") {
+        window.location.replace("http://127.0.0.1:5173/");
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene" aria-label="은하 중심 기준 태양계 3D 시뮬레이션"></canvas>
+
+      <section class="hud" aria-label="시뮬레이터 조작">
+        <div class="primary-controls">
+          <button id="playButton" class="control-button" type="button" aria-label="일시정지">
+            정지
+          </button>
+
+          <button id="swingbyButton" class="control-button swingby-button" type="button">
+            스타트
+          </button>
+
+          <label class="field destination-field" for="destinationSelect">
+            <span>목적지</span>
+            <select id="destinationSelect">
+              <option value="saturn" selected>토성</option>
+              <option value="mercury">수성</option>
+              <option value="venus">금성</option>
+              <option value="mars">화성</option>
+              <option value="jupiter">목성</option>
+              <option value="uranus">천왕성</option>
+              <option value="neptune">해왕성</option>
+            </select>
+          </label>
+
+          <label class="field speed-field" for="speedInput">
+            <span>배속</span>
+            <input id="speedInput" type="number" min="0" max="1000000000" step="1000" value="50000000" />
+          </label>
+        </div>
+
+        <details id="advancedControls" class="advanced-controls" open>
+          <summary>설정</summary>
+          <div class="advanced-grid">
+            <div class="preset-group" aria-label="배속 프리셋">
+              <button id="speedStepButton" class="preset-button speed-step-button" type="button" aria-label="배속 10 증가">
+                +10x
+              </button>
+              <button class="preset-button" type="button" data-speed="1">1x</button>
+              <button class="preset-button" type="button" data-speed="10000">1만x</button>
+              <button class="preset-button" type="button" data-speed="1000000">100만x</button>
+              <button class="preset-button" type="button" data-speed="100000000">1억x</button>
+            </div>
+
+            <label class="field view-field" for="viewMode">
+              <span>시점</span>
+              <select id="viewMode">
+                <option value="overview">전체</option>
+                <option value="solar">태양계</option>
+                <option value="galaxy">은하</option>
+              </select>
+            </label>
+
+            <label class="toggle" for="gravityToggle">
+              <input id="gravityToggle" type="checkbox" checked />
+              <span>중력 그리드</span>
+            </label>
+          </div>
+        </details>
+      </section>
+
+      <section class="readout" aria-live="polite">
+        <span id="elapsedTime">0일</span>
+        <span id="galacticAngle">은하 0.00°</span>
+        <span id="solarVelocity">초속 220km</span>
+        <span id="payloadStatus">10m·10t 대기</span>
+      </section>
+    </div>
+
+    <script type="module">
+      import("/src/main.js").catch((error) => {
+        console.error("Solar simulator failed to start", error);
+        document.documentElement.dataset.moduleError = error?.message || "unknown module error";
+      });
+    </script>
+  </body>
+</html>

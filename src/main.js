@@ -12,9 +12,11 @@ const PAYLOAD_RENDER_SIZE = 0.42;
 const PAYLOAD_TRAIL_POINTS = 980;
 const PAYLOAD_ROUTE_POINTS = 320;
 const PAYLOAD_ORBIT_POINTS = 160;
+const PAYLOAD_TRANSFER_TRAIL_DISTANCE = 0.1;
+const PAYLOAD_ORBIT_TRAIL_DISTANCE = 0.024;
 const MAX_GRAVITY_LABELS = 8;
-const SWINGBY_TRAJECTORY_COLOR = "#ff4a45";
-const SWINGBY_ORBIT_COLOR = "#ff7a66";
+const SWINGBY_TRAJECTORY_COLOR = "#ff5a50";
+const SWINGBY_ORBIT_COLOR = "#ff9172";
 const SUN_AVOIDANCE_MARGIN = 1.18;
 const BODY_AVOIDANCE_MARGIN = 0.28;
 const LAUNCH_CLEARANCE_PROGRESS = 0.045;
@@ -51,8 +53,8 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#050506");
-scene.fog = new THREE.FogExp2("#050506", 0.0045);
+scene.background = new THREE.Color("#080b12");
+scene.fog = new THREE.FogExp2("#080b12", 0.0032);
 
 const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 1300);
 camera.position.set(96, 58, 132);
@@ -64,13 +66,13 @@ controls.minDistance = 18;
 controls.maxDistance = 320;
 controls.target.set(45, 0, 2);
 
-scene.add(new THREE.AmbientLight("#93a7c8", 0.46));
+scene.add(new THREE.AmbientLight("#c4dcff", 0.72));
 
-const galaxyCoreLight = new THREE.PointLight("#ffd38a", 2.2, 240, 1.7);
+const galaxyCoreLight = new THREE.PointLight("#ffd38a", 2.9, 280, 1.55);
 galaxyCoreLight.position.set(0, 0, 0);
 scene.add(galaxyCoreLight);
 
-const sunLight = new THREE.PointLight("#fff0b8", 5.8, 95, 1.45);
+const sunLight = new THREE.PointLight("#fff2c2", 7.3, 132, 1.28);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.set(1024, 1024);
 
@@ -135,6 +137,7 @@ const payloadState = {
   transitionStepDistance: 0,
   trailCount: 0,
   trailDistanceGate: new THREE.Vector3(),
+  forceTrailPoint: false,
   position: new THREE.Vector3(),
   velocity: new THREE.Vector3(),
   startPosition: new THREE.Vector3(),
@@ -183,9 +186,9 @@ const bodies = [
     orbitalPeriod: 87.969,
     rotationPeriod: 58.646,
     massEarth: 0.055,
-    color: "#b9aa92",
+    color: "#c9bca4",
     textureKind: "crater",
-    gridColor: "#b9aa92",
+    gridColor: "#d7c9ad",
   },
   {
     key: "venus",
@@ -196,9 +199,9 @@ const bodies = [
     orbitalPeriod: 224.701,
     rotationPeriod: -243.025,
     massEarth: 0.815,
-    color: "#d7b36b",
+    color: "#e4bf72",
     textureKind: "cloudy",
-    gridColor: "#d7b36b",
+    gridColor: "#f0d28a",
   },
   {
     key: "earth",
@@ -209,9 +212,9 @@ const bodies = [
     orbitalPeriod: 365.256,
     rotationPeriod: 0.997,
     massEarth: 1,
-    color: "#4b9ce6",
+    color: "#58aaff",
     textureKind: "earth",
-    gridColor: "#73e0d1",
+    gridColor: "#8df5e8",
   },
   {
     key: "mars",
@@ -222,9 +225,9 @@ const bodies = [
     orbitalPeriod: 686.98,
     rotationPeriod: 1.026,
     massEarth: 0.107,
-    color: "#cf6845",
+    color: "#e17852",
     textureKind: "rust",
-    gridColor: "#ef8c58",
+    gridColor: "#ff9d68",
   },
   {
     key: "jupiter",
@@ -235,9 +238,9 @@ const bodies = [
     orbitalPeriod: 4332.59,
     rotationPeriod: 0.414,
     massEarth: 317.8,
-    color: "#d8a76d",
+    color: "#e2b77d",
     textureKind: "gas",
-    gridColor: "#f0c884",
+    gridColor: "#ffd996",
   },
   {
     key: "saturn",
@@ -248,10 +251,10 @@ const bodies = [
     orbitalPeriod: 10759.22,
     rotationPeriod: 0.444,
     massEarth: 95.2,
-    color: "#e1c381",
+    color: "#ecd394",
     textureKind: "bands",
-    gridColor: "#e9d9a3",
-    ring: { inner: 2.52, outer: 4.36, color: "#e6d2a1", opacity: 0.58 },
+    gridColor: "#fff0b8",
+    ring: { inner: 2.52, outer: 4.36, color: "#f5dfaa", opacity: 0.68 },
   },
   {
     key: "uranus",
@@ -262,10 +265,10 @@ const bodies = [
     orbitalPeriod: 30688.5,
     rotationPeriod: -0.718,
     massEarth: 14.5,
-    color: "#8fd3cf",
+    color: "#9ee7e4",
     textureKind: "ice",
-    gridColor: "#9be4de",
-    ring: { inner: 1.62, outer: 2.05, color: "#b8eee9", opacity: 0.28 },
+    gridColor: "#b5fff8",
+    ring: { inner: 1.62, outer: 2.05, color: "#cafefa", opacity: 0.42 },
   },
   {
     key: "neptune",
@@ -276,9 +279,9 @@ const bodies = [
     orbitalPeriod: 60182,
     rotationPeriod: 0.671,
     massEarth: 17.1,
-    color: "#456de4",
+    color: "#5f82ff",
     textureKind: "storm",
-    gridColor: "#6f8cff",
+    gridColor: "#93aaff",
   },
 ];
 
@@ -796,6 +799,8 @@ function buildSolarSystem() {
       map: texture,
       gradientMap: toonGradient,
       color: new THREE.Color(body.color),
+      emissive: new THREE.Color(body.color).multiplyScalar(0.16),
+      emissiveIntensity: 0.24,
     });
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(body.radius, 64, 32), material);
     mesh.castShadow = true;
@@ -831,7 +836,7 @@ function buildSwingbyPayload() {
     new THREE.MeshStandardMaterial({
       color: "#f8f1df",
       emissive: "#73e0d1",
-      emissiveIntensity: 0.26,
+      emissiveIntensity: 0.42,
       metalness: 0.42,
       roughness: 0.34,
     }),
@@ -879,7 +884,7 @@ function buildSwingbyPayload() {
     new THREE.LineBasicMaterial({
       color: SWINGBY_TRAJECTORY_COLOR,
       transparent: true,
-      opacity: 0.9,
+      opacity: 1,
       depthWrite: false,
     }),
   );
@@ -895,7 +900,7 @@ function buildSwingbyPayload() {
     new THREE.LineBasicMaterial({
       color: SWINGBY_TRAJECTORY_COLOR,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.88,
       depthWrite: false,
     }),
   );
@@ -911,7 +916,7 @@ function buildSwingbyPayload() {
     new THREE.LineBasicMaterial({
       color: SWINGBY_ORBIT_COLOR,
       transparent: true,
-      opacity: 0.78,
+      opacity: 0.95,
       depthWrite: false,
     }),
   );
@@ -960,6 +965,7 @@ function launchSwingbyPayload() {
   payloadState.missionClockDays = simulationDays;
   payloadState.lastStepDistance = 0;
   payloadState.transitionStepDistance = 0;
+  payloadState.forceTrailPoint = false;
   payloadState.transferDays = estimateTransferDays(targetHandle.body);
   payloadState.missionArrivalDays = payloadState.missionStartDays + payloadState.transferDays;
   payloadState.orbitRadius = targetHandle.body.radius * 2.25 + PAYLOAD_RENDER_SIZE * 1.5;
@@ -1023,6 +1029,7 @@ function clearSwingbyPayload() {
   payloadState.trailCount = 0;
   payloadState.lastStepDistance = 0;
   payloadState.transitionStepDistance = 0;
+  payloadState.forceTrailPoint = false;
   payloadState.insertionTurnAngle = 0;
   payloadState.maxRouteTurnAngle = 0;
   payloadState.orbitNeighborClearance = 0;
@@ -1093,9 +1100,11 @@ function updateSwingbyPayload(delta) {
   updatePayloadGravityLabels();
   orientPayloadToVelocity();
 
-  if (payloadState.position.distanceTo(payloadState.trailDistanceGate) > 0.1) {
+  const trailDistance = payloadState.position.distanceTo(payloadState.trailDistanceGate);
+  if (shouldAddPayloadTrailPoint(trailDistance)) {
     addPayloadTrailPoint(payloadState.position);
     payloadState.trailDistanceGate.copy(payloadState.position);
+    payloadState.forceTrailPoint = false;
   }
 }
 
@@ -1146,6 +1155,7 @@ function updatePayloadTransfer() {
     const beforeOrbitInsert = payloadState.position.clone();
     updatePayloadOrbit();
     payloadState.transitionStepDistance = payloadState.position.distanceTo(beforeOrbitInsert);
+    payloadState.forceTrailPoint = true;
   }
 }
 
@@ -2014,6 +2024,22 @@ function resetPayloadTrail(position) {
   payloadState.trailDistanceGate.copy(position);
 }
 
+function shouldAddPayloadTrailPoint(distanceFromGate) {
+  if (payloadState.forceTrailPoint) {
+    return true;
+  }
+
+  if (payloadState.phase === "orbit") {
+    const orbitThreshold = Math.max(
+      PAYLOAD_ORBIT_TRAIL_DISTANCE,
+      payloadState.orbitRadius * 0.004,
+    );
+    return distanceFromGate >= orbitThreshold && payloadState.lastStepDistance > 0.0004;
+  }
+
+  return distanceFromGate >= PAYLOAD_TRANSFER_TRAIL_DISTANCE;
+}
+
 function addPayloadTrailPoint(position) {
   if (payloadState.trailCount < PAYLOAD_TRAIL_POINTS) {
     const index = payloadState.trailCount * 3;
@@ -2169,22 +2195,22 @@ function updateGravityFieldPresentation() {
     let targetScale = 1;
 
     if (payloadState.active && !isTarget && !isSun) {
-      opacityMultiplier *= payloadState.phase === "orbit" ? 0.42 : 0.66;
+      opacityMultiplier *= payloadState.phase === "orbit" ? 0.62 : 0.8;
       targetScale = payloadState.phase === "orbit" ? 0.88 : 0.94;
     }
 
     if (viewportMode === "mobile-portrait" && !isTarget && !isSun) {
-      opacityMultiplier *= 0.62;
+      opacityMultiplier *= 0.78;
       targetScale = Math.min(targetScale, 0.9);
     }
 
     if (viewportMode === "mobile-portrait" && isTarget) {
-      opacityMultiplier *= 1.12;
+      opacityMultiplier *= 1.18;
     }
 
     grid.userData.materials?.forEach((material) => {
       const baseOpacity = material.userData.baseOpacity ?? material.opacity;
-      material.opacity = THREE.MathUtils.clamp(baseOpacity * opacityMultiplier, 0.04, 0.62);
+      material.opacity = THREE.MathUtils.clamp(baseOpacity * opacityMultiplier, 0.08, 0.82);
     });
     grid.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.18);
   });
@@ -2562,9 +2588,9 @@ function createOrbitRing(radius, index) {
   }
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineBasicMaterial({
-    color: index % 2 === 0 ? "#7ac9be" : "#e4bc72",
+    color: index % 2 === 0 ? "#9cf2e7" : "#ffd786",
     transparent: true,
-    opacity: 0.24,
+    opacity: 0.38,
   });
   return new THREE.Line(geometry, material);
 }
@@ -2622,7 +2648,7 @@ function createGravityGrid(body) {
   const material = new THREE.LineBasicMaterial({
     color: body.gridColor,
     transparent: true,
-    opacity: body.key === "sun" ? 0.18 : 0.34,
+    opacity: body.key === "sun" ? 0.3 : 0.54,
     depthWrite: false,
   });
   material.userData.baseOpacity = material.opacity;
@@ -2645,7 +2671,7 @@ function createGravityGrid(body) {
     new THREE.LineBasicMaterial({
       color: body.gridColor,
       transparent: true,
-      opacity: body.key === "sun" ? 0.28 : 0.48,
+      opacity: body.key === "sun" ? 0.46 : 0.72,
       depthWrite: false,
     }),
   );
@@ -2682,7 +2708,7 @@ function createSunGlow(radius) {
   const material = new THREE.MeshBasicMaterial({
     color: "#ff8d2f",
     transparent: true,
-    opacity: 0.18,
+    opacity: 0.26,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
@@ -2718,11 +2744,11 @@ function createFarStarfield() {
   return new THREE.Points(
     geometry,
     new THREE.PointsMaterial({
-      size: 1,
+      size: 1.08,
       sizeAttenuation: true,
       vertexColors: true,
       transparent: true,
-      opacity: 0.82,
+      opacity: 0.9,
       depthWrite: false,
     }),
   );
@@ -2753,7 +2779,7 @@ function createPlanetTexture(body) {
   }
 
   ctx.globalCompositeOperation = "soft-light";
-  ctx.fillStyle = "rgba(255, 255, 255, 0.13)";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
   ctx.fillRect(0, 0, size, size / 2);
   ctx.globalCompositeOperation = "source-over";
 
@@ -2768,8 +2794,8 @@ function createPlanetTexture(body) {
 function paintBase(ctx, body, width, height) {
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
   const base = new THREE.Color(body.color);
-  const light = base.clone().offsetHSL(0, -0.04, 0.2);
-  const dark = base.clone().offsetHSL(0, 0.08, -0.22);
+  const light = base.clone().offsetHSL(0, -0.05, 0.26);
+  const dark = base.clone().offsetHSL(0, 0.04, -0.12);
   gradient.addColorStop(0, `#${light.getHexString()}`);
   gradient.addColorStop(0.52, body.color);
   gradient.addColorStop(1, `#${dark.getHexString()}`);

@@ -115,6 +115,10 @@ const payloadState = {
   arrivalOrbitPhase: 0,
   insertionTurnAngle: 0,
   maxRouteTurnAngle: 0,
+  orbitNeighborClearance: 0,
+  orbitNeighborMargin: Infinity,
+  orbitNeighborClearanceKey: "-",
+  orbitNeighborClearanceName: "-",
   loadIndex: 0,
   useBodyAvoidanceArc: false,
   useSunAvoidanceArc: false,
@@ -175,6 +179,7 @@ const bodies = [
     name: "수성",
     radius: 0.46,
     distance: 8,
+    displayDistance: 8,
     orbitalPeriod: 87.969,
     rotationPeriod: 58.646,
     massEarth: 0.055,
@@ -187,6 +192,7 @@ const bodies = [
     name: "금성",
     radius: 0.76,
     distance: 10.6,
+    displayDistance: 11.8,
     orbitalPeriod: 224.701,
     rotationPeriod: -243.025,
     massEarth: 0.815,
@@ -199,6 +205,7 @@ const bodies = [
     name: "지구",
     radius: 0.84,
     distance: 13.5,
+    displayDistance: 15.9,
     orbitalPeriod: 365.256,
     rotationPeriod: 0.997,
     massEarth: 1,
@@ -211,6 +218,7 @@ const bodies = [
     name: "화성",
     radius: 0.62,
     distance: 16.8,
+    displayDistance: 20,
     orbitalPeriod: 686.98,
     rotationPeriod: 1.026,
     massEarth: 0.107,
@@ -223,6 +231,7 @@ const bodies = [
     name: "목성",
     radius: 2.34,
     distance: 22.8,
+    displayDistance: 28,
     orbitalPeriod: 4332.59,
     rotationPeriod: 0.414,
     massEarth: 317.8,
@@ -235,6 +244,7 @@ const bodies = [
     name: "토성",
     radius: 2.04,
     distance: 29.3,
+    displayDistance: 39.5,
     orbitalPeriod: 10759.22,
     rotationPeriod: 0.444,
     massEarth: 95.2,
@@ -248,6 +258,7 @@ const bodies = [
     name: "천왕성",
     radius: 1.28,
     distance: 35.2,
+    displayDistance: 49,
     orbitalPeriod: 30688.5,
     rotationPeriod: -0.718,
     massEarth: 14.5,
@@ -261,6 +272,7 @@ const bodies = [
     name: "해왕성",
     radius: 1.25,
     distance: 40.2,
+    displayDistance: 56,
     orbitalPeriod: 60182,
     rotationPeriod: 0.671,
     massEarth: 17.1,
@@ -367,6 +379,7 @@ function renderFrame() {
   updateGalaxyCore(delta);
   updateSolarSystem();
   updateSwingbyPayload(delta);
+  updateGravityFieldPresentation();
   updateCameraTarget();
   updateLabels();
   updateReadout();
@@ -405,6 +418,9 @@ window.__solarSim = {
       viewportMode,
       galaxyCoreStyle: galacticBlackHole?.userData.coreStyle ?? "unknown",
       galaxyCoreRotation: galacticBlackHole?.userData.diskGroup?.rotation.y ?? 0,
+      displayDistances: Object.fromEntries(
+        bodies.map((body) => [body.key, getBodyDisplayDistance(body)]),
+      ),
       solarPosition: solarSystem.position.toArray(),
       bodyPositions: Object.fromEntries(
         bodyHandles.map(({ body, holder }) => [body.key, holder.position.toArray()]),
@@ -427,6 +443,10 @@ window.__solarSim = {
         arrivalSpeedPerDay: payloadState.arrivalSpeedPerDay,
         insertionTurnAngle: payloadState.insertionTurnAngle,
         maxRouteTurnAngle: payloadState.maxRouteTurnAngle,
+        orbitNeighborClearance: payloadState.orbitNeighborClearance,
+        orbitNeighborMargin: payloadState.orbitNeighborMargin,
+        orbitNeighborClearanceKey: payloadState.orbitNeighborClearanceKey,
+        orbitNeighborClearanceName: payloadState.orbitNeighborClearanceName,
         loadIndex: payloadState.loadIndex,
         useBodyAvoidanceArc: payloadState.useBodyAvoidanceArc,
         useSunAvoidanceArc: payloadState.useSunAvoidanceArc,
@@ -765,7 +785,7 @@ function buildSolarSystem() {
       return;
     }
 
-    const orbitRing = createOrbitRing(body.distance, index);
+    const orbitRing = createOrbitRing(getBodyDisplayDistance(body), index);
     solarSystem.add(orbitRing);
 
     const holder = new THREE.Group();
@@ -1005,6 +1025,10 @@ function clearSwingbyPayload() {
   payloadState.transitionStepDistance = 0;
   payloadState.insertionTurnAngle = 0;
   payloadState.maxRouteTurnAngle = 0;
+  payloadState.orbitNeighborClearance = 0;
+  payloadState.orbitNeighborMargin = Infinity;
+  payloadState.orbitNeighborClearanceKey = "-";
+  payloadState.orbitNeighborClearanceName = "-";
   payloadState.loadIndex = 0;
   payloadState.useBodyAvoidanceArc = false;
   payloadState.useSunAvoidanceArc = false;
@@ -1615,7 +1639,7 @@ function getDepartureTangent(startBody, targetBody, days) {
   const orbitalTangent = getBodyOrbitalTangentAt(startBody, days);
   const startPosition = getBodyPositionAt(startBody, days);
   const radialDirection = startPosition.setY(0).normalize();
-  const radialSign = targetBody.distance >= startBody.distance ? 1 : -1;
+  const radialSign = getBodyDisplayDistance(targetBody) >= getBodyDisplayDistance(startBody) ? 1 : -1;
   return orbitalTangent.addScaledVector(radialDirection, radialSign * 0.26).normalize();
 }
 
@@ -1624,11 +1648,12 @@ function getBodyOrbitalTangentAt(body, days) {
     return new THREE.Vector3(0, 0, 1);
   }
 
-  const orbitAngle = (days / body.orbitalPeriod) * TAU + body.distance * 0.18;
+  const orbitAngle = getBodyOrbitAngle(body, days);
+  const displayDistance = getBodyDisplayDistance(body);
   return new THREE.Vector3(
-    -Math.sin(orbitAngle) * body.distance,
+    -Math.sin(orbitAngle) * displayDistance,
     Math.cos(orbitAngle * 1.7) * 0.204,
-    Math.cos(orbitAngle) * body.distance,
+    Math.cos(orbitAngle) * displayDistance,
   ).normalize();
 }
 
@@ -1722,6 +1747,51 @@ function updateTargetOrbitLine(center) {
   }
   payloadState.targetOrbit.geometry.setDrawRange(0, PAYLOAD_ORBIT_POINTS);
   payloadState.targetOrbit.geometry.attributes.position.needsUpdate = true;
+  updatePayloadOrbitClearanceDiagnostics(center);
+}
+
+function updatePayloadOrbitClearanceDiagnostics(center) {
+  const targetHandle = getBodyHandle(payloadState.targetKey);
+  if (!targetHandle || !payloadState.active) {
+    payloadState.orbitNeighborClearance = 0;
+    payloadState.orbitNeighborMargin = Infinity;
+    payloadState.orbitNeighborClearanceKey = "-";
+    payloadState.orbitNeighborClearanceName = "-";
+    return;
+  }
+
+  let closest = {
+    distance: Infinity,
+    margin: Infinity,
+    body: null,
+  };
+
+  for (let i = 0; i < PAYLOAD_ORBIT_POINTS; i += 1) {
+    const angle = (i / PAYLOAD_ORBIT_POINTS) * TAU;
+    const point = center.clone().add(getOrbitOffset(targetHandle.body, angle, payloadState.orbitRadius));
+
+    bodyHandles.forEach((handle) => {
+      if (handle.body.key === targetHandle.body.key) {
+        return;
+      }
+
+      const bodyPosition = getBodyPosition(handle);
+      const distance = getRouteBodyDistance(handle.body, point, bodyPosition);
+      const margin = distance - getBodyAvoidanceRadius(handle.body);
+      if (margin < closest.margin) {
+        closest = {
+          distance,
+          margin,
+          body: handle.body,
+        };
+      }
+    });
+  }
+
+  payloadState.orbitNeighborClearance = closest.distance === Infinity ? 0 : closest.distance;
+  payloadState.orbitNeighborMargin = closest.margin;
+  payloadState.orbitNeighborClearanceKey = closest.body?.key ?? "-";
+  payloadState.orbitNeighborClearanceName = closest.body?.name ?? "-";
 }
 
 function getCandidateTransferPoint(route, t) {
@@ -1893,7 +1963,9 @@ function estimateTransferDays(targetBody) {
     return 0;
   }
 
-  const semiMajorRatio = (earth.distance + targetBody.distance) / (2 * earth.distance);
+  const earthDistance = getBodyTransferDistance(earth);
+  const targetDistance = getBodyTransferDistance(targetBody);
+  const semiMajorRatio = (earthDistance + targetDistance) / (2 * earthDistance);
   const hohmannDays = (earth.orbitalPeriod * semiMajorRatio ** 1.5) / 2;
   return Math.max(18, hohmannDays);
 }
@@ -1915,11 +1987,12 @@ function getBodyPositionAt(body, days) {
     return new THREE.Vector3(0, 0, 0);
   }
 
-  const orbitAngle = (days / body.orbitalPeriod) * TAU + body.distance * 0.18;
+  const orbitAngle = getBodyOrbitAngle(body, days);
+  const displayDistance = getBodyDisplayDistance(body);
   return new THREE.Vector3(
-    Math.cos(orbitAngle) * body.distance,
+    Math.cos(orbitAngle) * displayDistance,
     Math.sin(orbitAngle * 1.7) * 0.12,
-    Math.sin(orbitAngle) * body.distance,
+    Math.sin(orbitAngle) * displayDistance,
   );
 }
 
@@ -2053,6 +2126,25 @@ function getBodyHandle(key) {
   return bodyHandles.find(({ body }) => body.key === key);
 }
 
+function getBodyDisplayDistance(body) {
+  return body.displayDistance ?? body.distance;
+}
+
+function getBodyTransferDistance(body) {
+  return body.distance;
+}
+
+function getBodyOrbitAngle(body, days) {
+  return (days / body.orbitalPeriod) * TAU + getBodyTransferDistance(body) * 0.18;
+}
+
+function getSolarSystemDisplayRadius() {
+  return bodies.reduce(
+    (radius, body) => Math.max(radius, getBodyDisplayDistance(body) + body.radius),
+    0,
+  );
+}
+
 function getBodyGravityValue(body) {
   const solarDamping = body.key === "sun" ? 0.66 : 1;
   return (Math.log10(body.massEarth + 1.35) + body.radius * 0.22) * solarDamping;
@@ -2067,6 +2159,37 @@ function getGravityGridDepth(body) {
   return Math.min(body.radius * 1.8, body.radius * (0.26 + massCurve * 0.42));
 }
 
+function updateGravityFieldPresentation() {
+  const targetKey = payloadState.active ? payloadState.targetKey : destinationSelect.value;
+
+  gravityFields.forEach((grid) => {
+    const isTarget = grid.userData.body === targetKey;
+    const isSun = grid.userData.isSun;
+    let opacityMultiplier = 1;
+    let targetScale = 1;
+
+    if (payloadState.active && !isTarget && !isSun) {
+      opacityMultiplier *= payloadState.phase === "orbit" ? 0.42 : 0.66;
+      targetScale = payloadState.phase === "orbit" ? 0.88 : 0.94;
+    }
+
+    if (viewportMode === "mobile-portrait" && !isTarget && !isSun) {
+      opacityMultiplier *= 0.62;
+      targetScale = Math.min(targetScale, 0.9);
+    }
+
+    if (viewportMode === "mobile-portrait" && isTarget) {
+      opacityMultiplier *= 1.12;
+    }
+
+    grid.userData.materials?.forEach((material) => {
+      const baseOpacity = material.userData.baseOpacity ?? material.opacity;
+      material.opacity = THREE.MathUtils.clamp(baseOpacity * opacityMultiplier, 0.04, 0.62);
+    });
+    grid.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.18);
+  });
+}
+
 function updateSolarSystem() {
   const galacticAngle = (simulationDays / GALACTIC_PERIOD_DAYS) * TAU;
   solarSystem.position.set(
@@ -2079,11 +2202,12 @@ function updateSolarSystem() {
 
   bodyHandles.forEach(({ body, holder, mesh }) => {
     if (body.key !== "sun") {
-      const orbitAngle = (simulationDays / body.orbitalPeriod) * TAU + body.distance * 0.18;
+      const orbitAngle = getBodyOrbitAngle(body, simulationDays);
+      const displayDistance = getBodyDisplayDistance(body);
       holder.position.set(
-        Math.cos(orbitAngle) * body.distance,
+        Math.cos(orbitAngle) * displayDistance,
         Math.sin(orbitAngle * 1.7) * 0.12,
-        Math.sin(orbitAngle) * body.distance,
+        Math.sin(orbitAngle) * displayDistance,
       );
     }
 
@@ -2098,9 +2222,11 @@ function updateCameraTarget() {
   solarSystem.getWorldPosition(solarPosition);
 
   if (viewMode === "solar") {
-    const delta = solarPosition.clone().sub(lastFrameSolarPosition);
-    camera.position.add(delta);
-    controls.target.copy(solarPosition);
+    const previousTarget = controls.target.clone();
+    const focusTarget = getSolarViewFocusPoint(solarPosition);
+    const focusSpeed = viewportMode === "mobile-portrait" && payloadState.active ? 0.08 : 1;
+    controls.target.lerp(focusTarget, focusSpeed);
+    camera.position.add(controls.target.clone().sub(previousTarget));
   } else if (viewMode === "galaxy") {
     controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.035);
   } else {
@@ -2109,6 +2235,32 @@ function updateCameraTarget() {
   }
 
   lastFrameSolarPosition.copy(solarPosition);
+}
+
+function getSolarViewFocusPoint(solarPosition) {
+  if (!payloadState.active) {
+    return solarPosition.clone();
+  }
+
+  if (viewportMode === "mobile-portrait") {
+    if (payloadState.phase === "orbit") {
+      const targetHandle = getBodyHandle(payloadState.targetKey);
+      if (targetHandle) {
+        return solarPosition.clone().add(getBodyPosition(targetHandle));
+      }
+    }
+
+    return solarPosition.clone().add(payloadState.position.clone().multiplyScalar(0.72));
+  }
+
+  if (viewportMode === "mobile-landscape" && payloadState.phase === "orbit") {
+    const targetHandle = getBodyHandle(payloadState.targetKey);
+    if (targetHandle) {
+      return solarPosition.clone().add(getBodyPosition(targetHandle).multiplyScalar(0.36));
+    }
+  }
+
+  return solarPosition.clone();
 }
 
 function updateLabels() {
@@ -2162,6 +2314,12 @@ function updateReadout() {
   document.documentElement.dataset.payloadInsertionTurnDegrees =
     payloadState.insertionTurnAngle.toFixed(3);
   document.documentElement.dataset.payloadMaxRouteTurnDegrees = payloadState.maxRouteTurnAngle.toFixed(3);
+  document.documentElement.dataset.payloadOrbitNeighborClearance =
+    payloadState.orbitNeighborClearance.toFixed(4);
+  document.documentElement.dataset.payloadOrbitNeighborMargin =
+    payloadState.orbitNeighborMargin === Infinity ? "Infinity" : payloadState.orbitNeighborMargin.toFixed(4);
+  document.documentElement.dataset.payloadOrbitNeighborClearanceKey = payloadState.orbitNeighborClearanceKey;
+  document.documentElement.dataset.payloadOrbitNeighborClearanceName = payloadState.orbitNeighborClearanceName;
   document.documentElement.dataset.payloadLoadIndex = payloadState.loadIndex.toFixed(3);
   document.documentElement.dataset.payloadBodyAvoidanceActive = String(payloadState.useBodyAvoidanceArc);
   document.documentElement.dataset.payloadBodyClearanceProjected = String(payloadState.enforceBodyClearance);
@@ -2283,8 +2441,9 @@ function setViewMode(mode) {
   lastFrameSolarPosition.copy(solarPosition);
 
   if (mode === "solar") {
-    controls.target.copy(solarPosition);
-    camera.position.copy(solarPosition).add(getSolarCameraOffset());
+    const focusTarget = getSolarViewFocusPoint(solarPosition);
+    controls.target.copy(focusTarget);
+    camera.position.copy(focusTarget).add(getSolarCameraOffset());
   } else if (mode === "galaxy") {
     controls.target.set(0, 0, 0);
     camera.position.copy(getGalaxyCameraPosition());
@@ -2360,35 +2519,38 @@ function applyViewportMode(forceCamera = false) {
 }
 
 function getSolarCameraOffset() {
+  const displayRadius = getSolarSystemDisplayRadius();
   if (viewportMode === "mobile-portrait") {
-    return new THREE.Vector3(0, 46, 92);
+    return new THREE.Vector3(0, displayRadius * 1.08, displayRadius * 2.18);
   }
 
   if (viewportMode === "mobile-landscape") {
-    return new THREE.Vector3(0, 30, 58);
+    return new THREE.Vector3(0, displayRadius * 0.58, displayRadius * 1.28);
   }
 
-  return new THREE.Vector3(0, 28, 54);
+  return new THREE.Vector3(0, displayRadius * 0.56, displayRadius * 1.22);
 }
 
 function getGalaxyCameraPosition() {
+  const galaxyRadius = GALACTIC_ORBIT_RADIUS + getSolarSystemDisplayRadius();
   if (viewportMode === "mobile-portrait") {
-    return new THREE.Vector3(0, 210, 0.1);
+    return new THREE.Vector3(0, galaxyRadius * 1.48, 0.1);
   }
 
-  return new THREE.Vector3(0, 165, 0.1);
+  return new THREE.Vector3(0, galaxyRadius * 1.14, 0.1);
 }
 
 function getOverviewCameraPosition() {
+  const displayRadius = getSolarSystemDisplayRadius();
   if (viewportMode === "mobile-portrait") {
-    return new THREE.Vector3(118, 108, 242);
+    return new THREE.Vector3(displayRadius * 2.15, displayRadius * 1.85, displayRadius * 4.75);
   }
 
   if (viewportMode === "mobile-landscape") {
-    return new THREE.Vector3(102, 58, 142);
+    return new THREE.Vector3(displayRadius * 1.9, displayRadius * 1.02, displayRadius * 2.65);
   }
 
-  return new THREE.Vector3(96, 58, 132);
+  return new THREE.Vector3(displayRadius * 1.95, displayRadius * 1.08, displayRadius * 2.75);
 }
 
 function createOrbitRing(radius, index) {
@@ -2463,6 +2625,7 @@ function createGravityGrid(body) {
     opacity: body.key === "sun" ? 0.18 : 0.34,
     depthWrite: false,
   });
+  material.userData.baseOpacity = material.opacity;
 
   const grid = new THREE.Group();
   const lattice = new THREE.LineSegments(geometry, material);
@@ -2486,10 +2649,13 @@ function createGravityGrid(body) {
       depthWrite: false,
     }),
   );
+  boundary.material.userData.baseOpacity = boundary.material.opacity;
   boundary.renderOrder = -1;
   grid.add(boundary);
 
   grid.userData.body = body.key;
+  grid.userData.isSun = body.key === "sun";
+  grid.userData.materials = [material, boundary.material];
   grid.userData.cellShape = "square";
   grid.userData.outlineShape = "circular";
   grid.userData.cellCount = cellCount;

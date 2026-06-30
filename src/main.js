@@ -14,6 +14,8 @@ const PAYLOAD_ROUTE_POINTS = 320;
 const PAYLOAD_ORBIT_POINTS = 160;
 const PAYLOAD_TRANSFER_TRAIL_DISTANCE = 0.1;
 const PAYLOAD_ORBIT_TRAIL_DISTANCE = 0.024;
+const MIN_PAYLOAD_ORBIT_PERIOD_DAYS = 24;
+const MAX_PAYLOAD_ORBIT_PERIOD_DAYS = 420;
 const MAX_GRAVITY_LABELS = 8;
 const SWINGBY_TRAJECTORY_COLOR = "#ff5a50";
 const SWINGBY_ORBIT_COLOR = "#ff9172";
@@ -1986,10 +1988,14 @@ function estimatePayloadOrbitPeriodDays(targetBody, arrivalSpeedPerDay) {
   const gravityPeriod = radiusRatio ** 1.5 / (gravityValue * 1.25);
   const speedMatchedPeriod =
     arrivalSpeedPerDay > 0.0001 ? (TAU * payloadState.orbitRadius) / arrivalSpeedPerDay : 0;
-  const transferMatchedFloor = Math.max(payloadState.transferDays * 0.72, 18);
-  const targetOrbitFloor = targetBody.orbitalPeriod * 0.028;
+  const transferMatchedFloor = Math.max(payloadState.transferDays * 0.52, MIN_PAYLOAD_ORBIT_PERIOD_DAYS);
+  const targetOrbitFloor = Math.min(targetBody.orbitalPeriod * 0.018, 240);
+  const orbitPeriodCeiling = Math.max(
+    72,
+    Math.min(payloadState.transferDays * 0.86, MAX_PAYLOAD_ORBIT_PERIOD_DAYS),
+  );
   const period = Math.max(gravityPeriod, speedMatchedPeriod, transferMatchedFloor, targetOrbitFloor);
-  return THREE.MathUtils.clamp(period, 18, Math.max(targetBody.orbitalPeriod * 0.32, 36));
+  return THREE.MathUtils.clamp(period, MIN_PAYLOAD_ORBIT_PERIOD_DAYS, orbitPeriodCeiling);
 }
 
 function getBodyPositionAt(body, days) {
